@@ -1,0 +1,6 @@
+rootProject.name = "fare"
+
+include(
+        "modules:fare-common",
+        "servers:fare-worker"
+)
