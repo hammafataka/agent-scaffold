@@ -1,5 +1,5 @@
 {
-  "name": "claude-scaffold",
+  "name": "@mfataka/claude-scaffold",
   "version": "0.1.1",
   "description": "Bootstrap Claude Code config (CLAUDE.md, skills, commands, agents, settings) for a repo by auto-detecting its stack.",
   "type": "module",

@@ -9,7 +9,7 @@ Setting up Claude Code well is mostly retyping the same `CLAUDE.md` you've writt
 Run it inside any repo:
 
 ```bash
-npx claude-scaffold
+npx @mfataka/claude-scaffold
 ```
 
 It detects the stack, shows you what it found, and asks what to generate. Walk through the prompts — press `←` at any point to go back — and it writes the files. Re-run it any time: it **merges** into an existing `CLAUDE.md` instead of clobbering your edits, and skips skill/command files that already exist.
@@ -17,7 +17,7 @@ It detects the stack, shows you what it found, and asks what to generate. Walk t
 Non-interactive (CI, scripted setup): `--yes` accepts every detected default and prompts only for genuinely-required fields it can't know (Overview, Architecture, Never do). `--dry-run` previews the writes without touching disk.
 
 ```bash
-npx claude-scaffold --yes --dry-run
+npx @mfataka/claude-scaffold --yes --dry-run
 ```
 
 `--yes` needs a terminal for those required fields; in a non-TTY environment the tool exits with a clear message rather than writing blank sections.
@@ -44,11 +44,11 @@ Adding a stack is a new plugin under `src/plugins/` — see [CONTRIBUTING](./CON
 
 ## Install
 
-`npx claude-scaffold` needs no install. To keep it on your PATH:
+`npx @mfataka/claude-scaffold` needs no install. To keep it on your PATH:
 
 ```bash
-npm install -g claude-scaffold
-claude-scaffold
+npm install -g @mfataka/claude-scaffold
+claude-scaffold          # the installed command is unscoped
 ```
 
 ### Local install (development or a private fork)

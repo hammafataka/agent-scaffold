@@ -1,10 +1,10 @@
 # Publishing
 
-`claude-scaffold` publishes to npm as a CLI package, so anyone can run it with `npx claude-scaffold` — no clone, no global install. Publishing is **automated**: pushing a version tag triggers a GitHub Actions workflow that builds, tests, and publishes.
+`claude-scaffold` publishes to npm as a CLI package, so anyone can run it with `npx @mfataka/claude-scaffold` — no clone, no global install. Publishing is **automated**: running the **Publish** workflow from the Actions tab builds, tests, bumps the version, and publishes.
 
 ## One-time setup
 
-1. **Reserve the name.** Confirm `claude-scaffold` is free: `npm view claude-scaffold`. If it's taken, switch to a scope (`@hammafataka/claude-scaffold`) in `package.json` — the workflow already publishes with `--access public`, which scoped packages need.
+1. **Name.** The unscoped `claude-scaffold` is already taken on npm by an unrelated package, so this publishes under your scope as **`@mfataka/claude-scaffold`** (set in `package.json`). The workflow publishes with `--access public`, which scoped packages require to be public. (The installed CLI command stays the unscoped `claude-scaffold` — that's the `bin` name, independent of the package name.)
 
 2. **Create an npm automation token.** On npmjs.com → *Access Tokens* → *Generate New Token* → **Automation** (bypasses 2FA in CI). Copy it.
 
@@ -44,7 +44,7 @@ npm pack --dry-run
 ## Verifying a release
 
 ```bash
-npx claude-scaffold@latest --dry-run
+npx @mfataka/claude-scaffold@latest --dry-run
 ```
 
 Run it inside a sample repo and confirm detection + the planned writes look right.

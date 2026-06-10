@@ -24,21 +24,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags so the sync/bump is on the real tip
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
           cache: npm
 
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Make sure we bump on top of the latest remote tip of this branch, so the
+      # push can fast-forward. GITHUB_REF_NAME is the branch the workflow ran on.
+      - name: Sync to latest
+        run: |
+          git fetch origin "$GITHUB_REF_NAME"
+          git checkout -B "$GITHUB_REF_NAME" "origin/$GITHUB_REF_NAME"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
 
       # BUMP comes from the constrained choice input, passed via env (not a ${{ }}
       # expansion inside the script) so there's no command-injection surface.
@@ -49,7 +58,7 @@ jobs:
           npm version "$BUMP" -m "chore: release v%s"
 
       - name: Push commit and tag
-        run: git push --follow-tags
+        run: git push origin "HEAD:$GITHUB_REF_NAME" --follow-tags
 
       - name: Publish to npm
         run: npm publish --provenance --access public
