@@ -1,0 +1,53 @@
+{
+  "name": "claude-scaffold",
+  "version": "0.1.0",
+  "description": "Bootstrap Claude Code config (CLAUDE.md, skills, commands, agents, settings) for a repo by auto-detecting its stack.",
+  "type": "module",
+  "license": "MIT",
+  "author": "hammafataka",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "scaffold",
+    "cli",
+    "spring-boot",
+    "codegen"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hammafataka/claude-scaffold.git"
+  },
+  "homepage": "https://github.com/hammafataka/claude-scaffold#readme",
+  "bugs": {
+    "url": "https://github.com/hammafataka/claude-scaffold/issues"
+  },
+  "bin": {
+    "claude-scaffold": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "gen:content": "node scripts/build-content.mjs",
+    "build": "node scripts/build-content.mjs && tsup",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@clack/core": "^0.3.5",
+    "@clack/prompts": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}
