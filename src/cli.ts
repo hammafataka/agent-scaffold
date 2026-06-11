@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { scanRepo } from "./core/repo-scanner";
 import { buildPlan, OutputToggles, Plan } from "./core/pipeline";
@@ -108,8 +110,23 @@ export async function main(argv: string[]): Promise<number> {
   return 0;
 }
 
-const isDirectRun = process.argv[1]?.endsWith("cli.ts") || process.argv[1]?.endsWith("cli.js");
-if (isDirectRun) {
+// True when this file is the process entry point. We compare realpaths rather than
+// matching the filename: when installed as a bin, the process is launched through a
+// `node_modules/.bin/claude-scaffold` symlink, so process.argv[1] ends in the bin
+// name, not "cli.js". Resolving the symlink and comparing to this module's own path
+// works for `tsx src/cli.ts` (dev), the built bin (npx / global install), and avoids
+// firing main() when tests import parseArgs from this module.
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectRun()) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (err) => {

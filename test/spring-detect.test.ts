@@ -55,6 +55,19 @@ describe("detectSpringBoot", () => {
     expect(r.facts.runCmd).toBe("./gradlew :servers:fare-worker:bootRun");
   });
 
+  it("scopes bootRun by project path, not directory, for programmatic settings.gradle", () => {
+    // Modules registered via `include name` + reassigned projectDir: the directory is
+    // nested ('servers/fare-worker') but the Gradle project path is flat (':fare-worker').
+    // The run target must use the project path — `:servers:fare-worker:bootRun` would fail
+    // with "project 'servers' not found".
+    const r = detectSpringBoot(scanRepo(fixt("gradle-programmatic")));
+    expect(r.confidence).toBeGreaterThan(0.7);
+    expect(r.facts.buildTool).toBe("gradle");
+    expect(String(r.facts.modules).split(",").sort()).toEqual(["fare-common", "fare-worker"]);
+    expect(r.facts.bootModule).toBe("fare-worker");
+    expect(r.facts.runCmd).toBe("./gradlew :fare-worker:bootRun");
+  });
+
   it("detects a Maven Spring Boot app", () => {
     const r = detectSpringBoot(scanRepo(fixt("maven-app")));
     expect(r.confidence).toBeGreaterThan(0.7);

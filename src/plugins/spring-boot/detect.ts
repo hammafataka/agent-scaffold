@@ -74,17 +74,30 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
   // `include` entries in settings.gradle(.kts); Maven reads `<module>` entries in the
   // root pom. Falls back to any directory that owns a build file. Each module tracks
   // its repo-relative path plus its leaf name (what we display and key prompts on).
+  // A module tracks two distinct things that are easy to conflate:
+  //   - `dir`: the repo-relative directory, used for file lookups (build file, app config).
+  //   - `projectPath`: the Gradle project path (`:`-separated, no leading `:`), used to
+  //     scope tasks like `bootRun`. For Maven this mirrors the dir.
+  // These DIVERGE when settings.gradle reassigns `projectDir` (e.g. `include 'fare-worker'`
+  // living under `servers/fare-worker`). Deriving the task path from the directory then
+  // produces `:servers:fare-worker:bootRun`, which Gradle rejects — `servers` is not a
+  // project. So we must keep the project path separate from the directory.
   interface Module {
-    path: string;
+    dir: string;
+    projectPath: string;
     name: string;
   }
   const seen = new Set<string>();
   const modules: Module[] = [];
-  const addModule = (p: string) => {
-    const path = p.replace(/^\/+|\/+$/g, "");
-    if (!path || seen.has(path)) return;
-    seen.add(path);
-    modules.push({ path, name: path.split("/").pop()! });
+  // `projectPath` defaults to the leaf name — the safe assumption when we can't read it
+  // from a Gradle `include` literal (the module is registered flat under the root, even
+  // if its directory is nested). Pass it explicitly when a literal include is available.
+  const addModule = (dir: string, projectPath?: string) => {
+    const d = dir.replace(/^\/+|\/+$/g, "");
+    if (!d || seen.has(d)) return;
+    seen.add(d);
+    const name = d.split("/").pop()!;
+    modules.push({ dir: d, projectPath: projectPath ?? name, name });
   };
 
   if (isMaven) {
@@ -95,18 +108,24 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
       }
     }
   } else {
-    // Gradle project paths use `:` separators (optional leading `:`); map them to dirs.
-    // Capture each `include`'s argument list (a parenthesised block or the rest of the
-    // line) then pull every quoted project path out of it.
+    // Gradle project paths use `:` separators (optional leading `:`). Capture each
+    // `include`'s argument list (a parenthesised block or the rest of the line), then pull
+    // every quoted project path out of it. The colon-form IS the project path; its default
+    // directory is the same string with `:` mapped to `/`.
     const settings = repo.readFile("settings.gradle.kts") ?? repo.readFile("settings.gradle") ?? "";
     for (const inc of settings.matchAll(/\binclude\b\s*(\([\s\S]*?\)|[^\n]*)/g)) {
       for (const q of inc[1].matchAll(/['"]([:\w.\-]+)['"]/g)) {
-        addModule(q[1].replace(/^:/, "").split(":").join("/"));
+        const projectPath = q[1].replace(/^:/, "");
+        addModule(projectPath.split(":").join("/"), projectPath);
       }
     }
   }
 
   // Fallback only when no declarations were found: any directory that owns a build file.
+  // This covers settings.gradle files that register modules programmatically (e.g. a
+  // `registerModule(name)` helper calling `include name` with a reassigned projectDir) —
+  // the include literals aren't statically visible, so we discover modules by directory
+  // and let `projectPath` default to the leaf name.
   if (modules.length === 0) {
     for (const f of buildFiles) {
       const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
@@ -125,15 +144,17 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
   // Falls back to the root `project(":x") { apply plugin: boot }` pattern. Empty for a
   // single/root app.
   let bootModule = ""; // leaf name (shown in the doc, marks the application module)
-  let bootModulePath = ""; // repo-relative dir (drives the scoped run target)
+  let bootModuleDir = ""; // repo-relative dir (drives file lookups + Maven `-pl`)
+  let bootModuleProjectPath = ""; // Gradle project path (drives the scoped run target)
   for (const f of repo.glob(/Application\.(java|kt)$/)) {
     if (!/@SpringBootApplication/.test(repo.readFile(f) ?? "")) continue;
     const owner = modules
-      .filter((m) => f === m.path || f.startsWith(m.path + "/"))
-      .sort((a, b) => b.path.length - a.path.length)[0];
+      .filter((m) => f === m.dir || f.startsWith(m.dir + "/"))
+      .sort((a, b) => b.dir.length - a.dir.length)[0];
     if (owner) {
       bootModule = owner.name;
-      bootModulePath = owner.path;
+      bootModuleDir = owner.dir;
+      bootModuleProjectPath = owner.projectPath;
       break;
     }
   }
@@ -141,7 +162,9 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
     const m = rootGradle.match(/project\(\s*["']:([\w.-]+)["']\s*\)\s*\{[^}]*springframework\.boot/);
     if (m && moduleNames.includes(m[1])) {
       bootModule = m[1];
-      bootModulePath = modules.find((mod) => mod.name === m[1])?.path ?? m[1];
+      const mod = modules.find((mod) => mod.name === m[1]);
+      bootModuleDir = mod?.dir ?? m[1];
+      bootModuleProjectPath = mod?.projectPath ?? m[1];
     }
   }
   if (bootModule) facts.bootModule = bootModule;
@@ -151,11 +174,11 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
     repo.readFile("src/main/resources/application.yml") ||
     repo.readFile("src/main/resources/application.yaml") ||
     repo.readFile("src/main/resources/application.properties") ||
-    (bootModule &&
-      (repo.readFile(`${bootModule}/src/main/resources/application.yml`) ||
-        repo.readFile(`${bootModule}/src/main/resources/application.yaml`) ||
-        repo.readFile(`${bootModule}/src/main/resources/config/application.yaml`) ||
-        repo.readFile(`${bootModule}/src/main/resources/config/application.yml`)));
+    (bootModuleDir &&
+      (repo.readFile(`${bootModuleDir}/src/main/resources/application.yml`) ||
+        repo.readFile(`${bootModuleDir}/src/main/resources/application.yaml`) ||
+        repo.readFile(`${bootModuleDir}/src/main/resources/config/application.yaml`) ||
+        repo.readFile(`${bootModuleDir}/src/main/resources/config/application.yml`)));
   if (appYml) {
     const prof = appYml.match(/active:\s*([^\n#]+)/) || appYml.match(/spring\.profiles\.active\s*=\s*(.+)/);
     if (prof) facts.activeProfile = prof[1].trim();
@@ -173,15 +196,18 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
   const hasGradlew = repo.exists("gradlew");
   if (buildTool === "maven") {
     const mvn = hasMvnw ? "./mvnw" : "mvn";
-    facts.runCmd = bootModulePath
-      ? `${mvn} -pl ${bootModulePath} spring-boot:run`
+    // Maven's reactor selects a module by its directory (`-pl`), not a project path.
+    facts.runCmd = bootModuleDir
+      ? `${mvn} -pl ${bootModuleDir} spring-boot:run`
       : `${mvn} spring-boot:run`;
     facts.buildCmd = `${mvn} clean package`;
     facts.testCmd = `${mvn} test`;
   } else {
     const gw = hasGradlew ? "./gradlew" : "gradle";
-    const gradlePath = bootModulePath.split("/").join(":");
-    facts.runCmd = gradlePath ? `${gw} :${gradlePath}:bootRun` : `${gw} bootRun`;
+    // Gradle scopes a task by project path (already `:`-separated), NOT by directory.
+    facts.runCmd = bootModuleProjectPath
+      ? `${gw} :${bootModuleProjectPath}:bootRun`
+      : `${gw} bootRun`;
     facts.buildCmd = `${gw} clean build`;
     facts.testCmd = `${gw} test`;
   }
