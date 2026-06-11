@@ -1,0 +1,21 @@
+rootProject.name = 'fare'
+
+// Modules are registered programmatically: `include name` takes a variable (not a quoted
+// literal), and projectDir is reassigned so the directory ('servers/fare-worker') differs
+// from the flat Gradle project path (':fare-worker'). Static parsing can't see the include
+// arguments, so detection falls back to directory discovery + leaf-name project paths.
+registerModule('fare-common', 'modules')
+registerWorkerModule('fare-worker')
+
+def registerModule(String name, String folder) {
+    internalRegister(name, folder)
+}
+
+def registerWorkerModule(String name) {
+    internalRegister(name, 'servers')
+}
+
+def internalRegister(String name, String folder) {
+    include name
+    project(':' + name).projectDir = file(folder + '/' + name)
+}
