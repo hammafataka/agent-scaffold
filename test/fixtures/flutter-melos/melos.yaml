@@ -1,0 +1,8 @@
+name: demo_workspace
+
+packages:
+  - packages/**
+
+scripts:
+  test:
+    run: melos exec -- flutter test

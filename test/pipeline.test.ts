@@ -5,7 +5,7 @@ import { buildPlan } from "../src/core/pipeline";
 
 const repo = scanRepo(join(__dirname, "fixtures", "gradle-app"));
 
-const allOutputs = { claudeMd: true, skills: true, commands: true, agents: true, settings: true, pdd: false };
+const allOutputs = { instructions: true, skills: true, commands: true, agents: true, settings: true, mcp: false, pdd: false };
 
 describe("buildPlan", () => {
   it("produces a CLAUDE.md plan from detected + answered fields", async () => {
@@ -36,7 +36,7 @@ describe("buildPlan", () => {
     };
     const { writes } = await buildPlan(repoWithClaude, {
       yes: true,
-      outputs: { claudeMd: true, skills: false, commands: false, agents: false, settings: false, pdd: false },
+      outputs: { instructions: true, skills: false, commands: false, agents: false, settings: false, mcp: false, pdd: false },
       ask: async (f) => `ANSWER:${f.key}`,
     });
     const claude = writes.find((w) => w.path === "CLAUDE.md")!;
@@ -50,7 +50,7 @@ describe("buildPlan", () => {
     const seen: string[] = [];
     const { writes } = await buildPlan(repo, {
       yes: false,
-      outputs: { claudeMd: false, skills: true, commands: false, agents: false, settings: false, pdd: false },
+      outputs: { instructions: false, skills: true, commands: false, agents: false, settings: false, mcp: false, pdd: false },
       ask: async () => "x",
       chooseItems: async (kind, items) => {
         seen.push(`${kind}:${items.map((i) => i.name).join(",")}`);
@@ -65,7 +65,7 @@ describe("buildPlan", () => {
   it("respects output toggles", async () => {
     const { writes } = await buildPlan(repo, {
       yes: true,
-      outputs: { claudeMd: true, skills: false, commands: false, agents: false, settings: false, pdd: false },
+      outputs: { instructions: true, skills: false, commands: false, agents: false, settings: false, mcp: false, pdd: false },
       ask: async () => "x",
     });
     expect(writes.every((w) => w.path === "CLAUDE.md")).toBe(true);
@@ -80,7 +80,7 @@ describe("buildPlan", () => {
       onStage: (title, index, total) => stages.push(`${index}/${total} ${title}`),
     });
     expect(stages).toEqual([
-      "1/5 CLAUDE.md",
+      "1/5 Instructions",
       "2/5 Skills",
       "3/5 Slash commands",
       "4/5 Agents",
@@ -92,7 +92,7 @@ describe("buildPlan", () => {
     // gradle-app has Flyway detected, but user overrides to manual-sql in the section prompt
     const { writes } = await buildPlan(repo, {
       yes: false,
-      outputs: { claudeMd: true, skills: true, commands: false, agents: false, settings: false, pdd: false },
+      outputs: { instructions: true, skills: true, commands: false, agents: false, settings: false, mcp: false, pdd: false },
       ask: async (f) => {
         if (f.key === "dbMigration") {
           // pick the manual-sql option value
@@ -129,7 +129,7 @@ describe("buildPlan", () => {
     const asked: string[] = [];
     const { writes } = await buildPlan(sqlRepo, {
       yes: false,
-      outputs: { claudeMd: true, skills: true, commands: false, agents: false, settings: false, pdd: false },
+      outputs: { instructions: true, skills: true, commands: false, agents: false, settings: false, mcp: false, pdd: false },
       ask: async (f) => {
         asked.push(f.key);
         // Return a custom path for sqlDir, blank for optional sqlPrefix
@@ -175,7 +175,7 @@ describe("buildPlan", () => {
   it("ships guard scripts alongside settings.json", async () => {
     const { writes } = await buildPlan(repo, {
       yes: true,
-      outputs: { claudeMd: false, skills: false, commands: false, agents: false, settings: true, pdd: false },
+      outputs: { instructions: false, skills: false, commands: false, agents: false, settings: true, mcp: false, pdd: false },
       ask: async (f) => `ANSWER:${f.key}`,
     });
     expect(writes.some((w) => w.path === ".claude/settings.json")).toBe(true);
@@ -189,10 +189,10 @@ describe("buildPlan", () => {
     const stages: string[] = [];
     await buildPlan(repo, {
       yes: true,
-      outputs: { claudeMd: true, skills: false, commands: false, agents: false, settings: true, pdd: false },
+      outputs: { instructions: true, skills: false, commands: false, agents: false, settings: true, mcp: false, pdd: false },
       ask: async (f) => `ANSWER:${f.key}`,
       onStage: (title, index, total) => stages.push(`${index}/${total} ${title}`),
     });
-    expect(stages).toEqual(["1/2 CLAUDE.md", "2/2 Settings"]);
+    expect(stages).toEqual(["1/2 Instructions", "2/2 Settings"]);
   });
 });

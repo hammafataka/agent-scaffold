@@ -1,17 +1,22 @@
 {
-  "name": "@mfataka/claude-scaffold",
+  "name": "@mfataka/agent-scaffold",
   "version": "0.1.3",
-  "description": "Bootstrap Claude Code config (CLAUDE.md, skills, commands, agents, settings) for a repo by auto-detecting its stack.",
+  "description": "Bootstrap AI coding-agent config (Claude Code, Cursor, Copilot, Gemini CLI, AGENTS.md, Windsurf) for a repo by auto-detecting its stack and the tools in use.",
   "type": "module",
   "license": "MIT",
   "author": "hammafataka",
   "keywords": [
-    "claude",
-    "claude-code",
+    "ai",
+    "coding-agent",
     "scaffold",
     "cli",
-    "spring-boot",
-    "codegen"
+    "claude-code",
+    "cursor",
+    "copilot",
+    "gemini-cli",
+    "agents-md",
+    "windsurf",
+    "mcp"
   ],
   "repository": {
     "type": "git",
@@ -22,6 +27,7 @@
     "url": "https://github.com/hammafataka/claude-scaffold/issues"
   },
   "bin": {
+    "agent-scaffold": "dist/cli.js",
     "claude-scaffold": "dist/cli.js"
   },
   "files": [

@@ -97,10 +97,29 @@ export interface PermissionSpec {
   guards?: GuardSpec[]; // optional PreToolUse/etc guardrails wired into settings.json
 }
 
+// A project-scoped MCP server entry; becomes a key in .mcp.json's `mcpServers` map.
+// Secrets are never inlined — configs use `${ENV_VAR}` placeholders, which Claude Code
+// expands at load time from the user's environment.
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+export interface McpServerSpec {
+  name: string; // key in .mcp.json mcpServers
+  description: string; // shown in the per-item picker
+  config: McpServerConfig;
+  recommended?: boolean; // default true; pre-checked in per-item selection
+  condition?: boolean; // default true; false = not offered
+}
+
 export interface StackPlugin {
   id: string;
   displayName: string;
   detect(repo: RepoSnapshot): DetectionResult;
+  // Optional human-readable summary lines of what detection found, shown in the CLI's
+  // "Detected" note. Omit (or return []) to fall back to a generic message.
+  describe?(facts: Facts): string[];
   // Optional top-level fields resolved before any stage. Confirmed values are merged
   // back into facts so sections, skills, and commands all see the user-confirmed values.
   fields?(facts: Facts): FieldSpec[];
@@ -112,6 +131,8 @@ export interface StackPlugin {
   commands(facts: Facts): CommandSpec[];
   agents(facts: Facts): AgentSpec[];
   settings(facts: Facts): PermissionSpec[];
+  // Optional: project-scoped MCP servers offered for .mcp.json (merged, never clobbered).
+  mcpServers?(facts: Facts): McpServerSpec[];
 }
 
 // Output of the pipeline, consumed by the writer.

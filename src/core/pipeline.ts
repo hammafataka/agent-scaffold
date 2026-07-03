@@ -1,46 +1,52 @@
-import { RepoSnapshot, StackPlugin, FieldSpec, PlannedWrite, Facts, WriteAction } from "../plugins/types";
+import { RepoSnapshot, StackPlugin, FieldSpec, PlannedWrite, Facts } from "../plugins/types";
 import { selectPlugin, PLUGINS } from "../plugins/registry";
 import { resolveFields } from "./field-resolver";
 import { BackSignal } from "./prompter";
-import { parseDocument, serializeDocument, Section } from "./md-document";
-import { mergeSections, MergeStatus } from "./md-merger";
-import { planSkillWrites } from "../generators/skills";
+import { Section } from "./md-document";
 import { pddSkills } from "../catalog/pdd-skills";
 import { pddWorkflowSection } from "../catalog/pdd-workflow";
-import { planCommandWrites } from "../generators/commands";
-import { planAgentWrites } from "../generators/agents";
-import { planSettingsWrite, planGuardScriptWrites } from "../generators/settings";
+import { Artifacts, emptyArtifacts } from "../tools/types";
+import { resolveTools, combinedCapabilities } from "../tools/registry";
 
 export enum SelectableKind {
   Skills = "skills",
   Commands = "commands",
   Agents = "agents",
+  Mcp = "MCP servers",
   Pdd = "PDD skills",
 }
 
 export interface OutputToggles {
-  claudeMd: boolean;
+  instructions: boolean;
   skills: boolean;
   commands: boolean;
   agents: boolean;
   settings: boolean;
+  mcp: boolean;
   pdd: boolean;
 }
 
-// An item the user can include/exclude within an output (a skill, command, or agent).
+// An item the user can include/exclude within an output (a skill, command, agent, or
+// MCP server). `hint` (the spec's description) is shown next to the name in the picker.
 export interface SelectableItem {
   name: string;
   label: string;
   recommended: boolean;
+  hint?: string;
 }
 
 export interface PlanOptions {
   yes: boolean;
   outputs: OutputToggles;
+  // Target tools (adapter ids). The artifacts are emitted once per tool, each into its
+  // own file layout. Defaults to Claude Code.
+  tools?: string[];
+  // Forced plugin id (from --stack); must match what the CLI already showed the user.
+  stackId?: string;
   ask: (field: FieldSpec) => Promise<string>;
   // Fired before each enabled output is built, so the CLI can show staged progress.
   onStage?: (title: string, index: number, total: number) => void;
-  // Per-item picker for skills/commands/agents. Returns the chosen item names.
+  // Per-item picker for skills/commands/agents/MCP servers. Returns the chosen names.
   // When omitted (or in --yes), all recommended items are included.
   chooseItems?: (kind: SelectableKind, items: SelectableItem[]) => Promise<string[]>;
 }
@@ -51,16 +57,13 @@ export interface Plan {
   writes: PlannedWrite[];
 }
 
-function titleLine(displayName: string): string {
-  return `# ${displayName} — Claude instructions`;
-}
-
-async function buildClaudeMd(
-  repo: RepoSnapshot,
+// Interview every section of the instructions document. Returns the generated sections
+// plus the confirmed field values (so the plugin can map them back into facts).
+async function buildInstructions(
   plugin: StackPlugin,
   facts: Facts,
   opts: PlanOptions,
-): Promise<{ write: PlannedWrite; confirmed: Record<string, string> }> {
+): Promise<{ sections: Section[]; confirmed: Record<string, string> }> {
   const specs = plugin.sections(facts);
   const generated: Section[] = [];
   const confirmed: Record<string, string> = {};
@@ -82,40 +85,12 @@ async function buildClaudeMd(
       }
     }
   }
-
-  // When PDD methodology is selected, inject the ordered workflow section (built from
-  // the installed PDD skills) right before the Stack section. Injected directly rather
-  // than as a fieldless SectionSpec so it never becomes a back-navigation dead-spot.
-  if (opts.outputs.pdd) {
-    const wf = pddWorkflowSection();
-    const stackIdx = generated.findIndex((s) => s.heading === "## Stack");
-    const at = stackIdx === -1 ? Math.min(1, generated.length) : stackIdx;
-    generated.splice(at, 0, { heading: wf.heading, body: wf.body });
-  }
-
-  const existingRaw = repo.exists("CLAUDE.md") ? repo.readFile("CLAUDE.md") : null;
-  let write: PlannedWrite;
-  if (existingRaw) {
-    const { doc, report } = mergeSections(parseDocument(existingRaw), generated);
-    const counts = { [MergeStatus.Filled]: 0, [MergeStatus.Kept]: 0, [MergeStatus.Added]: 0 };
-    for (const e of report) counts[e.status]++;
-    const parts = [MergeStatus.Filled, MergeStatus.Kept, MergeStatus.Added]
-      .filter((s) => counts[s] > 0)
-      .map((s) => `${counts[s]} ${s}`);
-    const note = parts.length ? parts.join(", ") : undefined;
-    write = { path: "CLAUDE.md", content: serializeDocument(doc), action: WriteAction.Update, note };
-  } else {
-    // Drop optional sections left blank so they don't serialize to a bare heading.
-    const nonEmpty = generated.filter((s) => s.body.trim() !== "");
-    const doc = { title: titleLine(plugin.displayName), preamble: "", sections: nonEmpty };
-    write = { path: "CLAUDE.md", content: serializeDocument(doc), action: WriteAction.Create };
-  }
-  return { write, confirmed };
+  return { sections: generated, confirmed };
 }
 
 // Narrow a list of named, possibly-recommended specs to the user's selection.
 // In --yes mode (or with no picker) we keep every recommended item.
-async function pickItems<T extends { name: string; recommended?: boolean; condition?: boolean }>(
+async function pickItems<T extends { name: string; description?: string; recommended?: boolean; condition?: boolean }>(
   kind: SelectableKind,
   specs: T[],
   opts: PlanOptions,
@@ -128,16 +103,22 @@ async function pickItems<T extends { name: string; recommended?: boolean; condit
   const chosen = new Set(
     await opts.chooseItems(
       kind,
-      available.map((s) => ({ name: s.name, label: s.name, recommended: s.recommended !== false })),
+      available.map((s) => ({
+        name: s.name,
+        label: s.name,
+        recommended: s.recommended !== false,
+        hint: s.description,
+      })),
     ),
   );
   return available.filter((s) => chosen.has(s.name));
 }
 
 export async function buildPlan(repo: RepoSnapshot, opts: PlanOptions): Promise<Plan> {
-  const { plugin, detection } = selectPlugin(repo, PLUGINS);
+  const { plugin, detection } = selectPlugin(repo, PLUGINS, opts.stackId);
   const facts = detection.facts;
-  const exists = (p: string) => repo.exists(p);
+  const tools = resolveTools(opts.tools ?? ["claude"]);
+  const caps = combinedCapabilities(tools);
 
   // Resolve plugin-level fields (e.g. sqlDir/sqlPrefix for manual-sql) before any stage
   // so that sections, skills, and commands all see the confirmed values.
@@ -151,87 +132,87 @@ export async function buildPlan(repo: RepoSnapshot, opts: PlanOptions): Promise<
     }
   }
 
-  // Build the ordered list of enabled stages. Each stage is independent: it returns
-  // its own PlannedWrite[] so the loop can discard and re-run any stage on back-nav.
-  type Stage = { title: string; run(): Promise<PlannedWrite[]> };
+  // Each stage interviews/selects one kind of artifact and stores it on `artifacts`.
+  // Stages are idempotent (they replace their own slice), so back-navigation simply
+  // steps the index back and re-runs.
+  const artifacts: Artifacts = emptyArtifacts();
+  type Stage = { title: string; run(): Promise<void> };
   const stages: Stage[] = [];
 
-  if (opts.outputs.claudeMd) {
+  if (opts.outputs.instructions && caps.instructions) {
     stages.push({
-      title: "CLAUDE.md",
+      title: "Instructions",
       run: async () => {
-        const { write, confirmed } = await buildClaudeMd(repo, plugin, facts, opts);
+        const { sections, confirmed } = await buildInstructions(plugin, facts, opts);
+        artifacts.instructions = { displayName: plugin.displayName, sections };
         // Let the plugin map confirmed choices back into facts so subsequent stages
         // (skills, commands) see the user-corrected values (e.g. chosen migration tool).
         if (plugin.mapConfirmedFacts) Object.assign(facts, plugin.mapConfirmedFacts(confirmed));
-        return [write];
       },
     });
   }
-  if (opts.outputs.skills) {
+  if (opts.outputs.skills && caps.skills) {
     stages.push({
       title: "Skills",
       run: async () => {
-        const chosen = await pickItems(SelectableKind.Skills, plugin.skills(facts), opts);
-        return planSkillWrites(chosen, exists);
+        artifacts.skills = await pickItems(SelectableKind.Skills, plugin.skills(facts), opts);
       },
     });
   }
-  if (opts.outputs.commands) {
+  if (opts.outputs.commands && caps.commands) {
     stages.push({
       title: "Slash commands",
       run: async () => {
-        const chosen = await pickItems(SelectableKind.Commands, plugin.commands(facts), opts);
-        return planCommandWrites(chosen, exists);
+        artifacts.commands = await pickItems(SelectableKind.Commands, plugin.commands(facts), opts);
       },
     });
   }
-  if (opts.outputs.agents) {
+  if (opts.outputs.agents && caps.agents) {
     stages.push({
       title: "Agents",
       run: async () => {
-        const chosen = await pickItems(SelectableKind.Agents, plugin.agents(facts), opts);
-        return planAgentWrites(chosen, exists);
+        artifacts.agents = await pickItems(SelectableKind.Agents, plugin.agents(facts), opts);
       },
     });
   }
-  if (opts.outputs.settings) {
+  if (opts.outputs.settings && caps.settings) {
     stages.push({
       title: "Settings",
       run: async () => {
-        const existing = repo.exists(".claude/settings.json")
-          ? repo.readFile(".claude/settings.json")
-          : null;
-        const specs = plugin.settings(facts);
-        const w = planSettingsWrite(specs, existing);
-        const scripts = planGuardScriptWrites(specs, exists);
-        return [...(w ? [w] : []), ...scripts];
+        artifacts.permissions = plugin.settings(facts);
       },
     });
   }
-  if (opts.outputs.pdd) {
+  if (opts.outputs.mcp && caps.mcp && plugin.mcpServers) {
+    stages.push({
+      title: "MCP servers",
+      run: async () => {
+        artifacts.mcpServers = await pickItems(SelectableKind.Mcp, plugin.mcpServers!(facts), opts);
+      },
+    });
+  }
+  if (opts.outputs.pdd && caps.pdd) {
     stages.push({
       title: "PDD methodology",
       run: async () => {
-        const chosen = await pickItems(SelectableKind.Pdd, pddSkills(), opts);
-        return planSkillWrites(chosen, exists, "pdd");
+        artifacts.pddSkills = await pickItems(SelectableKind.Pdd, pddSkills(), opts);
+        const wf = pddWorkflowSection();
+        artifacts.pddWorkflow = { heading: wf.heading, body: wf.body };
       },
     });
   }
 
   // Run stages in order. On BackSignal: re-throw at stage 0 (caller re-shows output
-  // selector), otherwise step back and clear the previous stage's results so it re-runs.
-  const stageWrites: PlannedWrite[][] = [];
+  // selector), otherwise step back one stage and re-run it.
   let i = 0;
   while (i < stages.length) {
     opts.onStage?.(stages[i].title, i + 1, stages.length);
     try {
-      stageWrites[i] = await stages[i].run();
+      await stages[i].run();
       i++;
     } catch (e) {
       if (e instanceof BackSignal) {
-        if (i === 0) throw e; // propagate → cli.ts re-shows output selector
-        stageWrites[i - 1] = []; // clear previous stage so it re-runs cleanly
+        if (i === 0) throw e; // propagate → cli re-shows output selector
         i--;
       } else {
         throw e;
@@ -239,7 +220,16 @@ export async function buildPlan(repo: RepoSnapshot, opts: PlanOptions): Promise<
     }
   }
 
+  // Emit once per selected tool. Paths are disjoint across adapters, so a plain concat
+  // is safe; dedupe defensively anyway (first tool wins).
   const writes: PlannedWrite[] = [];
-  for (let j = 0; j < stages.length; j++) writes.push(...(stageWrites[j] ?? []));
+  const seen = new Set<string>();
+  for (const tool of tools) {
+    for (const w of tool.plan(artifacts, repo)) {
+      if (seen.has(w.path)) continue;
+      seen.add(w.path);
+      writes.push(w);
+    }
+  }
   return { plugin, facts, writes };
 }

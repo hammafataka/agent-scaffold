@@ -11,7 +11,7 @@ describe("dry-run integration", () => {
     const repo = scanRepo(join(__dirname, "fixtures", "gradle-app"));
     const { writes } = await buildPlan(repo, {
       yes: true,
-      outputs: { claudeMd: true, skills: true, commands: true, agents: true, settings: true, pdd: false },
+      outputs: { instructions: true, skills: true, commands: true, agents: true, settings: true, mcp: true, pdd: false },
       ask: async (f) => `ANSWER:${f.key}`,
     });
     expect(writes.length).toBeGreaterThan(0);

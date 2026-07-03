@@ -1,4 +1,5 @@
 import { RepoSnapshot, DetectionResult, Facts } from "../types";
+import { readmeSummary } from "../../core/readme";
 
 export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
   const rootPom = repo.readFile("pom.xml");
@@ -21,6 +22,10 @@ export function detectSpringBoot(repo: RepoSnapshot): DetectionResult {
   const facts: Facts = {};
   const buildTool: "maven" | "gradle" = isMaven ? "maven" : "gradle";
   facts.buildTool = buildTool;
+
+  // Overview prefill from the README (build files carry no project description).
+  const description = readmeSummary(repo);
+  if (description) facts.projectDescription = description;
 
   // Version / Java come from the root build (which declares the Boot version + toolchain);
   // fall back to the aggregate if the root doesn't carry them.

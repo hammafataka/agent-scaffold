@@ -137,7 +137,9 @@ export const SPRING_API_CONVENTIONS: ChoiceOption[] = [
   { value: "Paginate list endpoints" },
 ];
 
-export const SPRING_GIT_WORKFLOW: ChoiceOption[] = [
+// Git workflow is stack-agnostic — shared across plugins. `SPRING_GIT_WORKFLOW` is kept
+// as an alias so existing imports keep working.
+export const GIT_WORKFLOW: ChoiceOption[] = [
   { value: "Feature branches named `feature/<ticket>`" },
   { value: "Branch names are the bare ticket ID, no prefix (e.g. `PROJ-123`)" },
   { value: "Branch from and target PRs at the integration branch (e.g. `dev`), not `main`" },
@@ -148,6 +150,7 @@ export const SPRING_GIT_WORKFLOW: ChoiceOption[] = [
   { value: "Squash-merge to main" },
   { value: "Rebase onto main; don't merge main in" },
 ];
+export const SPRING_GIT_WORKFLOW = GIT_WORKFLOW;
 
 export const SPRING_DEPENDENCIES: ChoiceOption[] = [
   { value: "Don't add dependencies without asking first.", detected: true },

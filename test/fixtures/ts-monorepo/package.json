@@ -1,0 +1,17 @@
+{
+  "name": "ts-monorepo-fixture",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.8.0",
+    "@biomejs/biome": "^1.9.0"
+  }
+}

@@ -104,7 +104,7 @@ export function springSections(facts: Facts): SectionSpec[] {
   ].filter(Boolean).join("\n");
 
   const sections: SectionSpec[] = [
-    detectedSection("## Overview", "overview", "One line: what does this service do?", undefined, true),
+    detectedSection("## Overview", "overview", "One line: what does this service do?", str(facts, "projectDescription"), true),
     choiceSection("## Behavior", "behavior", "Agent behavior — pick what applies:", SPRING_BEHAVIOR, false),
     detectedSection("## Stack", "stack", "Confirm/adjust the stack summary:", stackDetected || undefined, true),
   ];

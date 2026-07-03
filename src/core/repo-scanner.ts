@@ -2,8 +2,13 @@ import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { RepoSnapshot } from "../plugins/types";
 
+// Skipped while walking: VCS/IDE noise, dependency and build output, and directories
+// that hold *sample* projects (fixtures, testdata) whose build files would otherwise
+// hijack stack detection for the real repo.
 const IGNORED_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "target", ".gradle", ".idea", "out", ".next",
+  ".nuxt", ".svelte-kit", ".turbo", "coverage", ".dart_tool", "Pods", "vendor",
+  ".venv", "venv", "__pycache__", "fixtures", "testdata",
 ]);
 const MAX_DEPTH = 8;
 

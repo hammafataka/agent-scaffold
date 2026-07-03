@@ -218,23 +218,25 @@ async function askMultiselect(field: FieldSpec): Promise<string> {
 }
 
 const OUTPUT_LABELS: Record<keyof OutputToggles, string> = {
-  claudeMd: "CLAUDE.md",
-  skills: "Skills (.claude/skills/)",
-  commands: "Slash commands (.claude/commands/)",
-  agents: "Agents (.claude/agents/)",
-  settings: "Permissions (.claude/settings.json)",
-  pdd: "PDD methodology (.claude/skills/pdd/)",
+  instructions: "Instructions file (CLAUDE.md / AGENTS.md / rules)",
+  skills: "Skills / rules",
+  commands: "Slash commands / prompts / workflows",
+  agents: "Agents / chat modes",
+  settings: "Permissions & guardrails (.claude/settings.json)",
+  mcp: "MCP servers",
+  pdd: "PDD methodology",
 };
 
 // Top-level gate: generate everything in one go, or hand-pick. Returns the toggles
-// either way. "Everything" always includes PDD methodology regardless of stack.
+// either way. "Everything" means every output relevant to the selected tools and stack.
 // Loops when the user goes back (Left/Escape) from the "Let me choose" picker.
 export async function chooseOutputs(relevant: OutputToggles): Promise<OutputToggles> {
   while (true) {
-    const stackLabels = (Object.keys(relevant) as (keyof OutputToggles)[])
-      .filter((k) => k !== "pdd" && relevant[k])
-      .map((k) => OUTPUT_LABELS[k]);
-    const summary = [...stackLabels, OUTPUT_LABELS.pdd].join(", ") || "nothing detected";
+    const summary =
+      (Object.keys(relevant) as (keyof OutputToggles)[])
+        .filter((k) => relevant[k])
+        .map((k) => OUTPUT_LABELS[k])
+        .join(", ") || "nothing detected";
     const mode = await p.select({
       message: "What should I set up?",
       options: [
@@ -244,7 +246,7 @@ export async function chooseOutputs(relevant: OutputToggles): Promise<OutputTogg
       initialValue: "all",
     });
     if (p.isCancel(mode)) { consumeEscapeBack(); bail(); }
-    if (mode === "all") return { ...relevant, pdd: true };
+    if (mode === "all") return { ...relevant };
     try {
       return await selectOutputs(relevant);
     } catch (e) {
@@ -270,24 +272,50 @@ export async function selectOutputs(relevant: OutputToggles): Promise<OutputTogg
   }
   const set = new Set(picked as string[]);
   return {
-    claudeMd: set.has("claudeMd"),
+    instructions: set.has("instructions"),
     skills: set.has("skills"),
     commands: set.has("commands"),
     agents: set.has("agents"),
     settings: set.has("settings"),
+    mcp: set.has("mcp"),
     pdd: set.has("pdd"),
   };
+}
+
+// Target-tool picker: which coding agents should receive config. Tools whose config
+// already exists in the repo come pre-checked; with nothing detected, Claude Code is
+// the default. Left/Escape at this first prompt quits (there's nothing earlier).
+export async function chooseTools(
+  tools: { id: string; displayName: string; hint: string }[],
+  detected: string[],
+): Promise<string[]> {
+  const initial = detected.length > 0 ? detected : ["claude"];
+  const picked = await p.multiselect({
+    message: "Which coding tools should I configure?  (Space to select · Enter to confirm)",
+    options: tools.map((t) => ({
+      value: t.id,
+      label: t.displayName,
+      hint: detected.includes(t.id) ? `detected — ${t.hint}` : t.hint,
+    })),
+    initialValues: initial,
+    required: true,
+  });
+  if (p.isCancel(picked)) {
+    consumeEscapeBack();
+    bail();
+  }
+  return picked as string[];
 }
 
 // Per-item picker for skills/commands/agents. Recommended items are pre-checked.
 // Left (or Escape) throws BackSignal so the stage loop steps back to the previous stage.
 export async function chooseItems(
   kind: SelectableKind,
-  items: { name: string; label: string; recommended: boolean }[],
+  items: { name: string; label: string; recommended: boolean; hint?: string }[],
 ): Promise<string[]> {
   const picked = await p.multiselect({
     message: `Which ${kind} should I include?  (Space to select · Enter to confirm · ← to go back)`,
-    options: items.map((i) => ({ value: i.name, label: i.label })),
+    options: items.map((i) => ({ value: i.name, label: i.label, hint: i.hint })),
     initialValues: items.filter((i) => i.recommended).map((i) => i.name),
     required: false,
   });

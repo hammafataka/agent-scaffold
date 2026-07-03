@@ -16,8 +16,12 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const javaDir = join(root, "src", "catalog", "java");
+const dartDir = join(root, "src", "catalog", "dart");
+const nodeDir = join(root, "src", "catalog", "node");
 const pddDir = join(root, "src", "catalog", "pdd");
 const outFile = join(root, "src", "catalog", "java-content.json");
+const dartOutFile = join(root, "src", "catalog", "dart-content.json");
+const nodeOutFile = join(root, "src", "catalog", "node-content.json");
 const pddOutFile = join(root, "src", "catalog", "pdd-content.json");
 
 // Split frontmatter (--- ... ---) from body. Returns { meta, body }.
@@ -43,39 +47,53 @@ function listDir(dir) {
   return existsSync(dir) ? readdirSync(dir) : [];
 }
 
-const agents = [];
-for (const file of listDir(join(javaDir, "agents")).filter((f) => f.endsWith(".md")).sort()) {
-  const { meta, body } = parseFrontmatter(readFileSync(join(javaDir, "agents", file), "utf8"));
-  agents.push({
-    name: file.replace(/\.md$/, ""),
-    description: meta.description ?? "",
-    recommended: recommendedFlag(meta),
-    body,
-  });
-}
-
-const skills = [];
-const skillsDir = join(javaDir, "skills");
-for (const name of listDir(skillsDir).filter((d) => statSync(join(skillsDir, d)).isDirectory()).sort()) {
-  const skillPath = join(skillsDir, name, "SKILL.md");
-  if (!existsSync(skillPath)) continue;
-  const { meta, body } = parseFrontmatter(readFileSync(skillPath, "utf8"));
-  const references = [];
-  const refDir = join(skillsDir, name, "references");
-  for (const ref of listDir(refDir).filter((f) => f.endsWith(".md")).sort()) {
-    references.push({ path: `references/${ref}`, content: readFileSync(join(refDir, ref), "utf8").trim() + "\n" });
+// Bundle a stack catalog dir (agents/<name>.md + skills/<name>/SKILL.md [+ references/]) into
+// { agents, skills }. Used for both the Java and Dart/Flutter catalogs.
+function bundleStack(srcDir) {
+  const agents = [];
+  for (const file of listDir(join(srcDir, "agents")).filter((f) => f.endsWith(".md")).sort()) {
+    const { meta, body } = parseFrontmatter(readFileSync(join(srcDir, "agents", file), "utf8"));
+    agents.push({
+      name: file.replace(/\.md$/, ""),
+      description: meta.description ?? "",
+      recommended: recommendedFlag(meta),
+      body,
+    });
   }
-  skills.push({
-    name,
-    description: meta.description ?? "",
-    recommended: recommendedFlag(meta),
-    body,
-    references,
-  });
+
+  const skills = [];
+  const skillsDir = join(srcDir, "skills");
+  for (const name of listDir(skillsDir).filter((d) => statSync(join(skillsDir, d)).isDirectory()).sort()) {
+    const skillPath = join(skillsDir, name, "SKILL.md");
+    if (!existsSync(skillPath)) continue;
+    const { meta, body } = parseFrontmatter(readFileSync(skillPath, "utf8"));
+    const references = [];
+    const refDir = join(skillsDir, name, "references");
+    for (const ref of listDir(refDir).filter((f) => f.endsWith(".md")).sort()) {
+      references.push({ path: `references/${ref}`, content: readFileSync(join(refDir, ref), "utf8").trim() + "\n" });
+    }
+    skills.push({
+      name,
+      description: meta.description ?? "",
+      recommended: recommendedFlag(meta),
+      body,
+      references,
+    });
+  }
+  return { agents, skills };
 }
 
-writeFileSync(outFile, JSON.stringify({ agents, skills }, null, 2) + "\n");
-console.log(`build-content: ${agents.length} agents, ${skills.length} skills → src/catalog/java-content.json`);
+const java = bundleStack(javaDir);
+writeFileSync(outFile, JSON.stringify(java, null, 2) + "\n");
+console.log(`build-content: ${java.agents.length} agents, ${java.skills.length} skills → src/catalog/java-content.json`);
+
+const dart = bundleStack(dartDir);
+writeFileSync(dartOutFile, JSON.stringify(dart, null, 2) + "\n");
+console.log(`build-content: ${dart.agents.length} agents, ${dart.skills.length} skills → src/catalog/dart-content.json`);
+
+const node = bundleStack(nodeDir);
+writeFileSync(nodeOutFile, JSON.stringify(node, null, 2) + "\n");
+console.log(`build-content: ${node.agents.length} agents, ${node.skills.length} skills → src/catalog/node-content.json`);
 
 // ── PDD catalog ──────────────────────────────────────────────────────────────
 

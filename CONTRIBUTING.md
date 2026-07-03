@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve `claude-scaffold`. This is a small, plugin-based TypeScript CLI — most contributions are either a **new stack plugin**, a tweak to the **authored content** (the wording that lands in generated files), or a fix to the **core pipeline**.
+Thanks for helping improve `agent-scaffold`. This is a small, plugin-based TypeScript CLI — most contributions are a **new stack plugin** (detection + interview for a language/framework), a **new tool adapter** (emitting config for another coding agent), a tweak to the **authored content** (the wording that lands in generated files), or a fix to the **core pipeline**.
 
 ## Getting set up
 
@@ -18,48 +18,70 @@ Node 18+ is required.
 
 ```
 src/
-  cli.ts                 entry: detect → choose outputs → run pipeline → write
+  cli.ts                 entry: detect stack & tools → choose tools/outputs → pipeline → write
   core/
     repo-scanner.ts      read-only snapshot of the target repo
-    pipeline.ts          orchestrates stages (CLAUDE.md, skills, commands, agents, settings, PDD)
+    pipeline.ts          interview stages collect Artifacts; tool adapters emit them
     prompter.ts          @clack prompts + ← back-navigation
     field-resolver.ts    detected-value vs. ask logic (honours --yes)
-    md-document.ts        / md-merger.ts   parse & merge into an existing CLAUDE.md
+    readme.ts            README first-paragraph summary (Overview prefill)
+    md-document.ts        / md-merger.ts   parse & merge markdown instruction files
     writer.ts            apply planned writes (create / update / skip)
-  plugins/
+  plugins/               STACKS — what the repo is (detection + interview content)
     types.ts             StackPlugin + all the spec interfaces
     registry.ts          the list of real plugins + the detection threshold
     spring-boot/         detect.ts, sections.ts, settings.ts, index.ts
+    dart-flutter/        same layout, for Dart / Flutter
+    node-ts/             same layout, for Node.js / TypeScript
     generic/             the fallback plugin
+  tools/                 TOOLS — where the config lands (one adapter per coding agent)
+    types.ts             ToolAdapter + Artifacts (the canonical pipeline output)
+    registry.ts          adapter list, tool detection, capability union
+    shared.ts            merge/frontmatter/MCP-JSON helpers shared by adapters
+    claude.ts cursor.ts copilot.ts gemini.ts agents-md.ts windsurf.ts
   catalog/               ALL curated wording lives here (see below)
-  generators/            turn specs into PlannedWrites (skills, commands, agents, settings)
+  generators/            Claude-layout emitters (skills, commands, agents, settings, mcp)
 scripts/build-content.mjs  bundles authored markdown → *-content.json
 test/                    vitest specs + fixtures/ (sample repos)
 ```
 
-The golden rule: **engine code carries no project wording, and catalog content carries no logic.** If you're tuning what a generated file *says*, you almost certainly want `src/catalog/`, not a plugin.
+The golden rule: **engine code carries no project wording, and catalog content carries no logic.** If you're tuning what a generated file *says*, you almost certainly want `src/catalog/`, not a plugin. Stack plugins never know about tools; tool adapters never know about stacks — they meet at `Artifacts`.
 
 ## Editing authored content
 
 Curated prose lives as plain markdown and structured option lists under `src/catalog/`:
 
-- `section-options.ts` — checklist/menu options for each `CLAUDE.md` section (`SPRING_GIT_WORKFLOW`, `springConfigOptions`, `SPRING_BEHAVIOR`, …).
+- `section-options.ts` / `dart-section-options.ts` / `node-section-options.ts` — checklist/menu options for each `CLAUDE.md` section (`SPRING_GIT_WORKFLOW`, `springConfigOptions`, `nodeTestOptions`, …).
 - `java/skills/<name>/SKILL.md` (+ `references/`) and `java/agents/<name>.md` — the Spring Boot skills and agents, authored as markdown.
+- `dart/skills/<name>/SKILL.md` (+ `references/`) and `dart/agents/<name>.md` — the Dart / Flutter skills and agents.
+- `node/skills/<name>/SKILL.md` and `node/agents/<name>.md` — the Node.js / TypeScript skills and agents.
 - `pdd/skills/<name>/SKILL.md` — the PDD methodology skills.
 - `pdd-workflow.ts` — the ordered `## Implementation workflow` section that references the PDD skills.
+- `mcp-servers.ts` — the curated MCP servers plugins can offer for `.mcp.json` (credentials only ever as `${ENV_VAR}` placeholders).
 
-The markdown under `java/` and `pdd/` is **bundled into JSON at build time** by `scripts/build-content.mjs`. After editing any of it, run `npm run gen:content` (or `npm run build`) so `java-content.json` / `pdd-content.json` are regenerated — otherwise your changes won't show up. This is the most common gotcha.
+The markdown under `java/`, `dart/`, `node/`, and `pdd/` is **bundled into JSON at build time** by `scripts/build-content.mjs`. After editing any of it, run `npm run gen:content` (or `npm run build`) so `java-content.json` / `dart-content.json` / `node-content.json` / `pdd-content.json` are regenerated — otherwise your changes won't show up. This is the most common gotcha.
 
 ## Adding a stack plugin
 
 1. Implement the `StackPlugin` interface (`src/plugins/types.ts`) under `src/plugins/<stack>/`:
    - `detect(repo)` → `{ confidence, facts }`. Confidence ≥ `THRESHOLD` (0.5) wins; otherwise the generic fallback handles the repo.
    - `sections(facts)` → the `CLAUDE.md` sections (use the helpers and pull option lists from `catalog/section-options.ts`).
-   - `skills` / `commands` / `agents` / `settings` builders, and optional `fields` / `mapConfirmedFacts` for values the user confirms mid-run.
+   - `skills` / `commands` / `agents` / `settings` builders, and the optional hooks: `fields` / `mapConfirmedFacts` for values the user confirms mid-run, `describe(facts)` for the CLI's "Detected" panel, and `mcpServers(facts)` to offer entries for `.mcp.json` (reuse `catalog/mcp-servers.ts`).
 2. Register it in `src/plugins/registry.ts` (`PLUGINS`).
 3. Add a fixture repo under `test/fixtures/<name>/` and a `test/<stack>-detect.test.ts`.
 
 No engine changes are needed — the pipeline is plugin-agnostic.
+
+## Adding a tool adapter
+
+1. Implement the `ToolAdapter` interface (`src/tools/types.ts`) under `src/tools/<tool>.ts`:
+   - `detect(repo)` → does this tool's config already exist (pre-checks it in the picker)?
+   - `capabilities` → which artifact kinds the tool can express (a stage only runs when some selected tool supports it).
+   - `plan(artifacts, repo)` → translate the canonical `Artifacts` into the tool's file layout. Reuse `shared.ts`: `planInstructionsWrite` (markdown merge), `planMcpJsonWrite` (JSON merge, never overwrites existing entries), `writeOnce` (skip-if-exists), `frontmatter`.
+2. Register it in `src/tools/registry.ts` (`TOOLS`).
+3. Add cases to `test/tools.test.ts`.
+
+Never inline credentials in generated config — MCP entries use `${ENV_VAR}` placeholders (see `catalog/mcp-servers.ts`).
 
 ## Tests
 
