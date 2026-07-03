@@ -18,13 +18,16 @@
     "windsurf",
     "mcp"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hammafataka/claude-scaffold.git"
+    "url": "git+https://github.com/hammafataka/agent-scaffold.git"
   },
-  "homepage": "https://github.com/hammafataka/claude-scaffold#readme",
+  "homepage": "https://github.com/hammafataka/agent-scaffold#readme",
   "bugs": {
-    "url": "https://github.com/hammafataka/claude-scaffold/issues"
+    "url": "https://github.com/hammafataka/agent-scaffold/issues"
   },
   "bin": {
     "agent-scaffold": "dist/cli.js",
