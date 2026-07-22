@@ -12,7 +12,7 @@ npm run typecheck  # tsc --noEmit
 npm run build      # bundle content + tsup → dist/cli.js
 ```
 
-Node 18+ is required.
+Node 20+ is required.
 
 ## How it fits together
 

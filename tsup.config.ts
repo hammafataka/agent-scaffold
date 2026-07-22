@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/cli.ts"],
   format: ["esm"],
-  target: "node18",
+  target: "node20",
   clean: true,
   banner: { js: "#!/usr/bin/env node" },
   // Keep clack out of the bundle so the runtime loads a single @clack/core instance
